@@ -56,6 +56,7 @@ $agentInstallScriptBlock = {
         #>
         class AvdAgentFile {
             [string]$DisplayName
+            [string]$FileName
             [string]$FileUri
             [System.IO.FileInfo]$DownloadedFileInfo
 
@@ -66,6 +67,12 @@ $agentInstallScriptBlock = {
             AvdAgentFile([string]$name, [string]$uri) {
                 $this.DisplayName = $name
                 $this.FileUri = $uri
+            }
+
+            AvdAgentFile([string]$name, [string]$uri, [string]$fileNameOut) {
+                $this.DisplayName = $name
+                $this.FileUri = $uri
+                $this.FileName = $fileNameOut
             }
         }
 
@@ -90,7 +97,9 @@ $agentInstallScriptBlock = {
                 [string]$Uri,
                 [Parameter(Position = 1, Mandatory)]
                 [ValidateNotNullOrEmpty()]
-                [string]$OutDir
+                [string]$OutDir,
+                [Parameter(Position = 2, Mandatory)]
+                [string]$OutFileName
             )
 
             # Resolve the path supplied in '-OutDir' and ensure that it's a directory.
@@ -114,11 +123,8 @@ $agentInstallScriptBlock = {
             $downloadData = Invoke-WebRequest -Uri $Uri
             $ProgressPreference = "Continue"
 
-            # Get the file name from the 'Content-Disposition' header in the response.
-            $fileName = [System.Net.Http.Headers.ContentDispositionHeaderValue]::Parse($downloadData.Headers['Content-Disposition']).FileName
-
             # Generate the output path.
-            $outputFilePath = Join-Path -Path $resolvedOutDir -ChildPath $fileName
+            $outputFilePath = Join-Path -Path $resolvedOutDir -ChildPath $OutFileName
             Write-Verbose "Output path will be '$($outputFilePath)'."
 
             # If the file already exists, remove it.
@@ -188,8 +194,8 @@ $agentInstallScriptBlock = {
 
         # Initialize an array of the AVD agents to get.
         $avdAgentFilesToGet = @(
-            [AvdAgentFile]::new("AVD Desktop Agent", "https://query.prod.cms.rt.microsoft.com/cms/api/am/binary/RWrmXv"),
-            [AvdAgentFile]::new("AVD Desktop Agent Bootloader", "https://query.prod.cms.rt.microsoft.com/cms/api/am/binary/RWrxrH")
+            [AvdAgentFile]::new("AVD Desktop Agent", "https://query.prod.cms.rt.microsoft.com/cms/api/am/binary/RWrmXv", "avd-agent.msi"),
+            [AvdAgentFile]::new("AVD Desktop Agent Bootloader", "https://query.prod.cms.rt.microsoft.com/cms/api/am/binary/RWrxrH", "avd-bootloader.msi")
         )
 
         # Create a temporary directory at the root of the system drive (Typically C:\) to store the agent installers.
@@ -200,7 +206,14 @@ $agentInstallScriptBlock = {
         # Download each AVD agent installer.
         foreach ($avdAgent in $avdAgentFilesToGet) {
             Write-Verbose "Downloading '$($avdAgent.DisplayName)''."
-            $downloadedFile = Invoke-WebDownload -Uri $avdAgent.FileUri -OutDir $tmpDir.FullName
+
+            $downloadFileSplat = @{
+                "Uri"         = $avdAgent.FileUri;
+                "OutDir"      = $tmpDir.FullName;
+                "OutFileName" = $avdAgent.FileName;
+            }
+
+            $downloadedFile = Invoke-WebDownload @downloadFileSplat
 
             # Set the 'DownloadedFileInfo' property of the item to the downloaded file's 'System.IO.FileInfo' object.
             $avdAgent.DownloadedFileInfo = $downloadedFile
